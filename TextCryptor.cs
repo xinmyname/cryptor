@@ -29,7 +29,6 @@ namespace cryptor
         public string Encrypt(string plainText)
         {
             var payload = EncodePayload(plainText);
-            byte[] encryptedPayload;
             
             using (var aes = new AesManaged())
             {
@@ -41,17 +40,16 @@ namespace cryptor
                         cryptStream.Write(payload, 0, payload.Length);
 
                     byte[] cipherBytes = memStream.ToArray();
-                    encryptedPayload = aes.IV.Concat(cipherBytes).ToArray();
+                    byte[] encryptedPayload = aes.IV.Concat(cipherBytes).ToArray();
+
+                    return Convert.ToBase64String(encryptedPayload);
                 }
             }
-
-            return Convert.ToBase64String(encryptedPayload);
         }
 
         public string Decrypt(string cipherText)
         {
             byte[] encryptedPayload = Convert.FromBase64String(cipherText);
-            byte[] payload;
 
             using (var aes = new AesManaged())
             {
@@ -67,11 +65,11 @@ namespace cryptor
                     using (var cryptStream = new CryptoStream(memStream, decryptor, CryptoStreamMode.Read))
                         cryptStream.CopyTo(decryptedStream);
 
-                    payload = decryptedStream.ToArray();
+                    byte[] payload = decryptedStream.ToArray();
+
+                    return DecodePayload(payload);
                 }                
             }
-
-            return DecodePayload(payload);
         }
 
         private byte[] EncodePayload(string text)
