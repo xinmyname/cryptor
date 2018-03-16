@@ -95,6 +95,10 @@ namespace cryptor
             using (var reader = new BinaryReader(stream))
             {
                 int version = reader.ReadInt32();
+
+                if (version != 1)
+                    throw new ApplicationException($"Unknown version: {version}");
+
                 int length = reader.ReadInt32();
                 byte[] textBytes = reader.ReadBytes(length);
 
