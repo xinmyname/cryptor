@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization.Formatters.Binary;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -25,17 +26,9 @@ namespace cryptor
             _key = key;
         }
 
-        public string Encrypt(string text)
+        public string Encrypt(string plainText)
         {
-            var textLength = (byte)text.Length;
-            var saltLength = (((text.Length >> 2) + 1) << 3) - 1;
-            var saltedText = SaltText(text, saltLength);
-            int payloadLen = Encoding.UTF8.GetByteCount(saltedText) + 1;
-            var payload = new byte[payloadLen];
-            
-            payload[0] = textLength;
-            Encoding.UTF8.GetBytes(saltedText, 0, saltedText.Length, payload, 1);
-
+            var payload = EncodePayload(plainText);
             byte[] encryptedPayload;
             
             using (var aes = new AesManaged())
@@ -45,7 +38,7 @@ namespace cryptor
                 using (var memStream = new MemoryStream())
                 {
                     using (var cryptStream = new CryptoStream(memStream, encryptor, CryptoStreamMode.Write))
-                        cryptStream.Write(payload, 0, payloadLen);
+                        cryptStream.Write(payload, 0, payload.Length);
 
                     byte[] cipherBytes = memStream.ToArray();
                     encryptedPayload = aes.IV.Concat(cipherBytes).ToArray();
@@ -55,10 +48,10 @@ namespace cryptor
             return Convert.ToBase64String(encryptedPayload);
         }
 
-        public string Decrypt(string text)
+        public string Decrypt(string cipherText)
         {
-            byte[] encryptedPayload = Convert.FromBase64String(text);
-            byte[] decryptedPayload;
+            byte[] encryptedPayload = Convert.FromBase64String(cipherText);
+            byte[] payload;
 
             using (var aes = new AesManaged())
             {
@@ -74,47 +67,41 @@ namespace cryptor
                     using (var cryptStream = new CryptoStream(memStream, decryptor, CryptoStreamMode.Read))
                         cryptStream.CopyTo(decryptedStream);
 
-                    decryptedPayload = decryptedStream.ToArray();
+                    payload = decryptedStream.ToArray();
                 }                
             }
 
-            int textLength = decryptedPayload[0];
-            string saltedText = Encoding.UTF8.GetString(decryptedPayload, 1, decryptedPayload.Length - 1);
-            return saltedText.Substring(0, textLength);
+            return DecodePayload(payload);
         }
 
-        private static char[] TypableChars = {
-            '`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=',
-            '~', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+',
-            'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']',
-            'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '|',
-            'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';',
-            'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':',
-            'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 
-            'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?'            
-        };
-
-        private static string GetRandomText(int length)
+        private byte[] EncodePayload(string text)
         {
-            var text = new StringBuilder(length);
-            var rng = new Random();
-            
-            for (int i = 0; i < length; i++)
-                text.Append(TypableChars[rng.Next(0, TypableChars.Length)]);
+            using (var stream = new MemoryStream())
+            using (var writer = new BinaryWriter(stream))
+            {
+                byte[] textBytes = Encoding.UTF8.GetBytes(text);
+                int version = 1;
+                int length = textBytes.Length;
 
-            return text.ToString();
+                writer.Write(version);
+                writer.Write(length);
+                writer.Write(textBytes);
+
+                return stream.ToArray();
+            }
         }
 
-        private static string SaltText(string text, int length)
+        private string DecodePayload(byte[] payload)
         {
-            if (text.Length > length)
-                throw new ArgumentException("Text length exceeded salted length.", nameof(length));
+            using (var stream = new MemoryStream(payload))
+            using (var reader = new BinaryReader(stream))
+            {
+                int version = reader.ReadInt32();
+                int length = reader.ReadInt32();
+                byte[] textBytes = reader.ReadBytes(length);
 
-            var saltedText = new StringBuilder(text, length);
-
-            saltedText.Append(GetRandomText(length - text.Length));
-
-            return saltedText.ToString();
+                return Encoding.UTF8.GetString(textBytes);
+            }
         }
     }
 }
